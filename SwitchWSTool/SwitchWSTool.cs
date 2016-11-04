@@ -170,21 +170,21 @@ namespace SwitchWS
                 ExecuteRobocopy(buildLocation, workspaceDll, out process);
             }
 
-            // If configuration file contains BundlesForCompile parameter trigger generation of pdb files
-            var bundlesForCompile = ConfigurationSettings.AppSettings["BundlesForCompile"].Split(',');
-            if (bundlesForCompile.First() != "")
+            // If configuration file contains Modules parameter trigger Modules update based on the Globals/VersionInformation
+            var modules = ConfigurationSettings.AppSettings["Modules"].Split(',');
+            if (modules.First() != "")
             {
-                WriteTo(Environment.NewLine + "Generation pdbs for modules...");
+                WriteTo(Environment.NewLine + "Updating modules...");
                 var deployedToolsDir = workspacePath + "\\" + myDeployedToolsPath.Split(new[] { '/' }).Last();
                 // Create mapping for Deployment tools and download them
                 workSpace.CreateMapping(new WorkingFolder(myDeployedToolsPath, deployedToolsDir));
                 workSpace.Get(new[] { myDeployedToolsPath }, VersionSpec.Latest, RecursionType.Full, GetOptions.Overwrite);
 
-                
-                foreach (var bundlePath in bundlesForCompile)
+
+                foreach (var modulePathWithWhitespace in modules)
                 {
-                    var bundle = bundlePath.Split(new[] {'/'}).Last();
-                    var module = bundlePath.Split(new[] {"$/syngo.net/Modules/"}, StringSplitOptions.RemoveEmptyEntries).Last().Split(new[] { '/' }).First();
+                    var modulePath = modulePathWithWhitespace.TrimStart();
+                    var module = modulePath.Split(new[] { "$/syngo.net/Modules/" }, StringSplitOptions.RemoveEmptyEntries).Last().Split(new[] { '/' }).First();
 
                     var moduleRoot = workspacePath + "\\" + module;
                     // Create mapping for current module
@@ -198,12 +198,11 @@ namespace SwitchWS
                     var moduleVersion = moduleVersionDoc.GetElementsByTagName("Version").Item(0).InnerText;
                     string moduleVersionChs = "";
 
-                    var moduleVersionFilePath = bundlePath.Replace(bundlePath.Split('/').Last(), "") +
-                                                "_Globals/VersionInformation/" +
+                    var moduleVersionFilePath = modulePath + "/_Globals/VersionInformation/" +
                                                 moduleVersionFile.FullName.Split('\\').Last();
 
                     var changesetHistory = versionControl.QueryHistory(moduleVersionFilePath, VersionSpec.Latest, 0, RecursionType.None, null,
-                        VersionSpec.ParseSingleSpec("380000", null), VersionSpec.Latest, 10, true, false);
+                        VersionSpec.ParseSingleSpec("380000", null), VersionSpec.Latest, 20, true, false);
                     foreach (Changeset changeset in changesetHistory)
                     {
                         var chsId = changeset.ChangesetId.ToString();
@@ -226,59 +225,58 @@ namespace SwitchWS
 
                     if (string.IsNullOrEmpty(moduleVersionChs))
                     {
-                        Console.WriteLine();
-                        WriteTo(Environment.NewLine + string.Format("Found problem with getting module version of {0} bundle. Process will be skipped...", bundle) + Environment.NewLine);
+                        WriteTo(string.Format("Found problem with getting module version of {0} bundle. Process will be skipped...", module) + Environment.NewLine);
                         continue;
                     }
 
-                    WriteTo(string.Format("Found relevant changeset {0} for bundle {1} with version {2}", moduleVersionChs, bundle, moduleVersion));
+                    WriteTo(string.Format("Found relevant changeset {0} for module {1} with version {2}", moduleVersionChs, module, moduleVersion));
 
-                    // Getting sources for module bundle under changeset 'moduleVersionChs'
-                    var globalsBundle = bundlePath.Replace(bundle.Split('/').Last(), "_Globals");
-                    WriteTo(string.Format(Environment.NewLine + "Getting sources for bundles: {0}, {1}", globalsBundle, bundlePath));
-                    workSpace.Get(new[] { bundlePath, globalsBundle }, new ChangesetVersionSpec(moduleVersionChs), RecursionType.Full, GetOptions.Overwrite);
+                    // Getting sources for module under changeset 'moduleVersionChs'
+                    WriteTo(string.Format("Getting sources for module: {0}", module) + Environment.NewLine);
+                    workSpace.Get(new[] { modulePath }, new ChangesetVersionSpec(moduleVersionChs), RecursionType.Full, GetOptions.GetAll);
 
-                    var repoRootTmp = bundlePath.Replace("$/syngo.net/Modules", workspacePath).Replace('/', '\\');
-                    var moduleSpecLocation = repoRootTmp + "\\BundleSpec.xml";
-                    var moduleSolLocation = repoRootTmp + "\\" + bundle + ".sln";
-                    var repoRoot = repoRootTmp.Replace(repoRootTmp.Split('\\').Last(), "");
+                    // this has to be discussed what next
+                    //var repoRootTmp = bundlePath.Replace("$/syngo.net/Modules", workspacePath).Replace('/', '\\');
+                    //var moduleSpecLocation = repoRootTmp + "\\BundleSpec.xml";
+                    //var moduleSolLocation = repoRootTmp + "\\" + bundle + ".sln";
+                    //var repoRoot = repoRootTmp.Replace(repoRootTmp.Split('\\').Last(), "");
 
-                    // Downloading dependencies for module bundle
-                    var arguments = string.Format("-BundleSpec {0} -WorkspaceRoot {1}", moduleSpecLocation, repoRoot);
-                    WriteTo(string.Format(Environment.NewLine + "Download dependencies for bundle: {0}", bundle));
-                    ExecuteCommand(deployedToolsDir + "\\DependencyManagement.Console.exe", arguments, true, true, out process);
-                    WriteTo(process.StandardOutput.ReadToEnd());
-                    process.WaitForExit();
+                    //// Downloading dependencies for module bundle
+                    //var arguments = string.Format("-BundleSpec {0} -WorkspaceRoot {1}", moduleSpecLocation, repoRoot);
+                    //WriteTo(string.Format(Environment.NewLine + "Download dependencies for bundle: {0}", bundle));
+                    //ExecuteCommand(deployedToolsDir + "\\DependencyManagement.Console.exe", arguments, true, true, out process);
+                    //WriteTo(process.StandardOutput.ReadToEnd());
+                    //process.WaitForExit();
 
-                    // Compile solution
-                    arguments = string.Format("{0} /m /p:RunCodeAnalysis=false /p:Configuration={1},Platform={2}", moduleSolLocation, configuration, platform);
-                    WriteTo(string.Format(Environment.NewLine + "Build solution: {0}", moduleSolLocation));
-                    ExecuteCommand("C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe", arguments, true, true, out process);
-                    WriteTo(process.StandardOutput.ReadToEnd());
-                    process.WaitForExit();
+                    //// Compile solution
+                    //arguments = string.Format("{0} /m /p:RunCodeAnalysis=false /p:Configuration={1},Platform={2}", moduleSolLocation, configuration, platform);
+                    //WriteTo(string.Format(Environment.NewLine + "Build solution: {0}", moduleSolLocation));
+                    //ExecuteCommand("C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe", arguments, true, true, out process);
+                    //WriteTo(process.StandardOutput.ReadToEnd());
+                    //process.WaitForExit();
                     
-                    if (!Directory.Exists(workspaceDll))
-                    {
-                        Directory.CreateDirectory(workspaceDll);
-                    }
+                    //if (!Directory.Exists(workspaceDll))
+                    //{
+                    //    Directory.CreateDirectory(workspaceDll);
+                    //}
 
-                    // Copying pdb and dll files from module location to workspace dll root location
-                    var moduleBin = repoRoot + "\\bin";
-                    foreach (var file in Directory.GetFiles(moduleBin, "*.pdb", SearchOption.AllDirectories))
-                    {
-                        var sourceFilePath = file;
-                        var fileName = file.Split('\\').Last();
-                        var destFilePath = workspaceDll + "\\" + fileName;
-                        var sourceFilePathDll = sourceFilePath.Replace(".pdb", ".dll");
-                        var destFilePathDll = destFilePath.Replace(".pdb", ".dll");
-                        if (File.Exists(sourceFilePathDll))
-                        {
-                            WriteTo(string.Format("Copying file from {0} to {1} location", sourceFilePath, destFilePath));
-                            File.Copy(sourceFilePath, destFilePath, true);
-                            WriteTo(string.Format("Copying file from {0} to {1} location", sourceFilePathDll, destFilePathDll));
-                            File.Copy(sourceFilePathDll, destFilePathDll, true);
-                        }
-                    }
+                    //// Copying pdb and dll files from module location to workspace dll root location
+                    //var moduleBin = repoRoot + "\\bin";
+                    //foreach (var file in Directory.GetFiles(moduleBin, "*.pdb", SearchOption.AllDirectories))
+                    //{
+                    //    var sourceFilePath = file;
+                    //    var fileName = file.Split('\\').Last();
+                    //    var destFilePath = workspaceDll + "\\" + fileName;
+                    //    var sourceFilePathDll = sourceFilePath.Replace(".pdb", ".dll");
+                    //    var destFilePathDll = destFilePath.Replace(".pdb", ".dll");
+                    //    if (File.Exists(sourceFilePathDll))
+                    //    {
+                    //        WriteTo(string.Format("Copying file from {0} to {1} location", sourceFilePath, destFilePath));
+                    //        File.Copy(sourceFilePath, destFilePath, true);
+                    //        WriteTo(string.Format("Copying file from {0} to {1} location", sourceFilePathDll, destFilePathDll));
+                    //        File.Copy(sourceFilePathDll, destFilePathDll, true);
+                    //    }
+                    //}
                 }
             }
             else
